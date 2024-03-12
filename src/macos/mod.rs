@@ -1,5 +1,4 @@
-mod extern_c;
-mod extern_extend;
+mod rtmsg;
 
 use std::{
     ffi::CString,
@@ -7,22 +6,17 @@ use std::{
     os::fd::{AsRawFd, RawFd},
 };
 
-use crate::{Route, RouteAction};
-use libc::{read, write};
-
-use self::{
-    extern_c::{
-        rt_msghdr, socket, AF_ROUTE, AF_UNSPEC, RTA_DST, RTA_GATEWAY, RTA_NETMASK, RTF_GATEWAY,
-        RTF_STATIC, RTF_UP, RTM_ADD, SOCK_RAW,
-    },
-    extern_extend::m_rtmsg,
+use crate::{macos::rtmsg::m_rtmsg, Route, RouteAction};
+use libc::{
+    rt_msghdr, AF_ROUTE, AF_UNSPEC, RTA_DST, RTA_GATEWAY, RTA_NETMASK,
+    RTF_GATEWAY, RTF_STATIC, RTF_UP, RTM_ADD, SOCK_RAW,
 };
 
 #[macro_export]
 macro_rules! syscall {
     ($fn: ident ( $($arg: expr),* ) ) => {{
         #[allow(unused_unsafe)]
-        let res = unsafe { $fn($( $arg), *) };
+        let res = unsafe { libc::$fn($( $arg), *) };
         if res < 0 {
             Err(std::io::Error::last_os_error())
         } else {
@@ -114,11 +108,66 @@ impl RouteAction for RouteSock {
 
         Ok(())
     }
+
+    /* 
+    fn delete(&mut self, route: Route) -> io::Result<()> {
+        let mut rtm_flags = (RTF_STATIC | RTF_UP | RTF_GATEWAY) as i32;
+
+        let rtm_addrs = (RTA_DST | RTA_NETMASK | RTA_GATEWAY) as i32;
+
+        let mut rtmsg = m_rtmsg::default();
+        rtmsg.hdr.rtm_type = RTM_ADD as u8;
+        rtmsg.hdr.rtm_flags = rtm_flags;
+        rtmsg.hdr.rtm_addrs = rtm_addrs;
+        rtmsg.hdr.rtm_seq = 1;
+
+        rtmsg.put_destination(&route.destination);
+        if let Some(gateway) = route.gateway {
+            rtmsg.put_gateway(&gateway);
+        }
+        if let Some(ifindex) = route.ifindex {
+            rtmsg.put_index(ifindex);
+        }
+        rtmsg.put_netmask(&route.mask());
+
+        rtmsg.hdr.rtm_msglen = rtmsg.len() as u16;
+
+        let slice = {
+            let ptr = &rtmsg as *const m_rtmsg as *const u8;
+            let len = rtmsg.hdr.rtm_msglen as usize;
+
+            unsafe { std::slice::from_raw_parts(ptr, len) }
+        };
+
+        self.write(slice)?;
+
+        let mut buf = [0; std::mem::size_of::<m_rtmsg>()];
+        let n = self.read(&mut buf)?;
+        if n < std::mem::size_of::<rt_msghdr>() {
+            return Err(io::Error::new(io::ErrorKind::Other, "invalid response"));
+        }
+
+        let rt_hdr: &rt_msghdr = unsafe { std::mem::transmute(buf.as_ptr()) };
+
+        assert_eq!(rt_hdr.rtm_type, RTM_ADD as u8);
+        if rt_hdr.rtm_errno != 0 {
+            return Err(code2error(rt_hdr.rtm_errno));
+        }
+
+        Ok(())
+    }
+
+    fn show() -> io::Result<Vec<Route>> {
+        todo!()
+    }
+    */
 }
 
 impl RouteSock {
     pub fn new() -> io::Result<Self> {
-        let fd = syscall!(socket(AF_ROUTE as i32, SOCK_RAW as i32, AF_UNSPEC as i32))?;
+        let fd = syscall!(
+            socket(AF_ROUTE as i32, SOCK_RAW as i32, AF_UNSPEC as i32)
+        )?;
 
         Ok(Self(fd))
     }
@@ -137,7 +186,7 @@ fn code2error(err: i32) -> io::Error {
 
 pub fn if_nametoindex(name: &str) -> Option<u32> {
     let name = CString::new(name).ok()?;
-    let ifindex = unsafe { extern_c::if_nametoindex(name.as_ptr()) };
+    let ifindex = unsafe { libc::if_nametoindex(name.as_ptr()) };
 
     Some(ifindex)
 }

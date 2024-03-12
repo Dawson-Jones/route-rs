@@ -1,6 +1,7 @@
 use std::net::IpAddr;
 
-use super::extern_c::*;
+use libc::{in6_addr, in_addr, rt_msghdr, sockaddr_dl, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6, AF_LINK, RTM_VERSION};
+
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -49,7 +50,7 @@ impl m_rtmsg {
                 sa_in6.sin6_port = 0;
                 sa_in6.sin6_flowinfo = 0;
                 sa_in6.sin6_addr = in6_addr {
-                    __u6_addr: unsafe { std::mem::transmute(addr.octets()) },
+                    s6_addr: unsafe { std::mem::transmute(addr.octets()) },
                 };
                 sa_in6.sin6_scope_id = 0;
 
@@ -78,17 +79,5 @@ impl m_rtmsg {
 
     pub fn put_netmask(&mut self, mask: &IpAddr) {
         self.put_addr(&mask)
-    }
-}
-
-impl Default for rt_metrics {
-    fn default() -> Self {
-        unsafe { std::mem::zeroed() }
-    }
-}
-
-impl Default for sockaddr_dl {
-    fn default() -> Self {
-        unsafe { std::mem::zeroed() }
     }
 }

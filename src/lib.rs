@@ -69,4 +69,6 @@ impl Route {
 
 pub trait RouteAction {
     fn add(&mut self, route: Route) -> io::Result<()>;
+    // fn delete(&mut self, route: Route) -> io::Result<()>;
+    // fn show() -> io::Result<Vec<Route>>;
 }
