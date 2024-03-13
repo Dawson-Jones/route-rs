@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use route_rs::{if_nametoindex, Route, RouteAction, RouteSock};
 
 use std::fs::read_to_string;

@@ -1,12 +1,12 @@
 mod rtmsg;
 
 use std::{
-    ffi::CString, io::{self, Read, Write}, net::IpAddr, os::fd::{AsRawFd, RawFd}
+    ffi::CString, io::{self, Read, Write}, os::fd::{AsRawFd, RawFd}
 };
 
 use crate::{macos::rtmsg::m_rtmsg, Route, RouteAction};
 use libc::{
-    rt_msghdr, AF_INET, AF_INET6, AF_ROUTE, AF_UNSPEC, RTA_BRD, RTA_DST, RTA_GATEWAY, RTA_IFP, RTA_NETMASK, RTF_GATEWAY, RTF_HOST, RTF_STATIC, RTF_UP, RTM_ADD, RTM_DELETE, RTM_GET, RTM_VERSION, SOCK_RAW
+    rt_msghdr, AF_INET, AF_INET6, AF_ROUTE, AF_UNSPEC, RTA_BRD, RTA_DST, RTA_GATEWAY, RTA_IFP, RTA_NETMASK, RTF_GATEWAY, RTF_STATIC, RTF_UP, RTM_ADD, RTM_DELETE, RTM_GET, RTM_VERSION, SOCK_RAW
 };
 
 #[macro_export]
@@ -149,7 +149,7 @@ impl RouteAction for RouteSock {
 
     fn get(&mut self, route: &Route) -> io::Result<Route> {
         let mut ret = Route::default();
-        let mut rtm_flags = (RTF_STATIC | RTF_UP | RTF_GATEWAY) as i32;
+        let rtm_flags = (RTF_STATIC | RTF_UP | RTF_GATEWAY) as i32;
         let rtm_addrs = (RTA_DST | RTA_NETMASK | RTA_IFP) as i32;
         // if !route.destination.is_unspecified() {
         //     rtm_flags |= RTF_HOST as i32;
