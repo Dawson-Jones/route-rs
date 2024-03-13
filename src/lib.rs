@@ -1,13 +1,12 @@
-use std::{io, net::{IpAddr, Ipv4Addr, Ipv6Addr}};
+use std::{
+    io,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+};
 
 mod macos;
 
 #[cfg(all(target_os = "macos"))]
-pub use macos::{
-    RouteSock,
-    if_nametoindex,
-};
-
+pub use macos::{if_nametoindex, RouteSock, };
 
 #[derive(Debug)]
 pub struct Route {
@@ -39,10 +38,7 @@ impl Route {
     }
 
     pub fn default() -> Route {
-        Route::new(
-            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 
-            0
-        )
+        Route::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0)
     }
 
     pub(crate) fn mask(&self) -> IpAddr {
@@ -56,7 +52,7 @@ impl Route {
         }
     }
 
-    pub (crate) fn cidr(&mut self, netmask: IpAddr) {
+    pub(crate) fn cidr(&mut self, netmask: IpAddr) {
         self.prefix = match netmask {
             IpAddr::V4(netmask) => <Ipv4Addr as Into<u32>>::into(netmask).leading_ones() as u8,
             IpAddr::V6(netmask) => <Ipv6Addr as Into<u128>>::into(netmask).leading_ones() as u8,
@@ -92,9 +88,28 @@ impl Route {
     }
 }
 
+#[derive(Debug)]
+pub enum RouteChange {
+    ADD,
+    DELETE,
+    CHANGE,
+    OTHER(u8),
+}
+
+impl From<u8> for RouteChange {
+    fn from(value: u8) -> Self {
+        match value {
+            1 => RouteChange::ADD,
+            2 => RouteChange::DELETE,
+            3 => RouteChange::CHANGE,
+            _ => RouteChange::OTHER(value),
+        }
+    }
+}
 
 pub trait RouteAction {
     fn add(&mut self, route: &Route) -> io::Result<()>;
     fn delete(&mut self, route: &Route) -> io::Result<()>;
     fn get(&mut self, route: &Route) -> io::Result<Route>;
+    fn monitor(&mut self, buf: &mut [u8]) -> io::Result<(RouteChange, Route)>;
 }

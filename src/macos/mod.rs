@@ -4,9 +4,9 @@ use std::{
     ffi::CString, io::{self, Read, Write}, os::fd::{AsRawFd, RawFd}
 };
 
-use crate::{macos::rtmsg::m_rtmsg, Route, RouteAction};
+use crate::{macos::rtmsg::m_rtmsg, Route, RouteAction, RouteChange};
 use libc::{
-    rt_msghdr, AF_INET, AF_INET6, AF_ROUTE, AF_UNSPEC, RTA_BRD, RTA_DST, RTA_GATEWAY, RTA_IFP, RTA_NETMASK, RTF_GATEWAY, RTF_STATIC, RTF_UP, RTM_ADD, RTM_DELETE, RTM_GET, RTM_VERSION, SOCK_RAW
+    rt_msghdr, AF_INET, AF_INET6, AF_ROUTE, AF_UNSPEC, RTAX_MAX, RTA_DST, RTA_GATEWAY, RTA_IFP, RTA_NETMASK, RTF_GATEWAY, RTF_STATIC, RTF_UP, RTM_ADD, RTM_DELETE, RTM_GET, RTM_VERSION, SOCK_RAW
 };
 
 #[macro_export]
@@ -64,7 +64,7 @@ impl RouteAction for RouteSock {
 
         let rtm_addrs = (RTA_DST | RTA_NETMASK | RTA_GATEWAY) as i32;
 
-        let mut rtmsg = m_rtmsg::default();
+        let mut rtmsg: m_rtmsg = m_rtmsg::default();
         rtmsg.hdr.rtm_type = RTM_ADD as u8;
         rtmsg.hdr.rtm_flags = rtm_flags;
         rtmsg.hdr.rtm_addrs = rtm_addrs;
@@ -173,10 +173,7 @@ impl RouteAction for RouteSock {
             unsafe { std::slice::from_raw_parts(ptr, len) }
         };
 
-        println!("write: {} bytes", slice.len());
-        println!("{:x?}", slice);
         self.write(slice)?;
-        println!("flags: {}", rtmsg.hdr.rtm_flags);
 
         let mut buf = [0; std::mem::size_of::<m_rtmsg>()];
         let n = self.read(&mut buf)?;
@@ -185,13 +182,6 @@ impl RouteAction for RouteSock {
         }
 
         let rtmsg: &mut m_rtmsg = unsafe { std::mem::transmute(buf.as_ptr()) };
-        // rtmsg.attr_len = n - std::mem::size_of::<rt_msghdr>();
-        println!("{n} size readed...");
-        println!("hdr");
-        println!("{:x?}", &buf[0..std::mem::size_of::<rt_msghdr>()]);
-        println!("attr");
-        println!("{:x?}", &buf[std::mem::size_of::<rt_msghdr>()..n]);
-
         assert_eq!(rtmsg.hdr.rtm_version, RTM_VERSION as u8);
         if rtmsg.hdr.rtm_errno != 0 {
             return Err(code2error(rtmsg.hdr.rtm_errno));
@@ -204,33 +194,92 @@ impl RouteAction for RouteSock {
             ));
         }
 
-        let mut bit = 1;
-        // RTA_BRD is max bitmask value of rtm_addrs
-        while bit <= RTA_BRD && rtmsg.attr_len + std::mem::size_of::<rt_msghdr>() < n {
-            if rtmsg.hdr.rtm_addrs & bit != 0 {
-                match bit {
-                    RTA_DST => {
-                        ret.destination = rtmsg.get_destination()
-                    },
-                    RTA_GATEWAY => ret.gateway = {
-                        let gateway = rtmsg.get_gateway();
-                        if rtmsg.hdr.rtm_flags & RTF_GATEWAY != 0 {
-                            Some(gateway)
-                        } else {
-                            None
-                        }
-                    },
-                    RTA_NETMASK => ret.cidr(rtmsg.get_netmask(
-                        if route.destination.is_ipv4() {AF_INET as u8} else {AF_INET6 as u8})),
-                    RTA_IFP => ret.ifindex = Some(rtmsg.get_index()),
-                    _ => (),
-                }
+        for offset in 0..RTAX_MAX {
+            if rtmsg.attr_len + std::mem::size_of::<rt_msghdr>() >= n {
+                break;
+            }
+            let bit = 1 << offset;
+            if rtmsg.hdr.rtm_addrs & bit == 0 {
+                continue;
             }
 
-            bit <<= 1;
+            match bit {
+                RTA_DST => {
+                    ret.destination = rtmsg.get_destination()
+                },
+                RTA_GATEWAY => ret.gateway = {
+                    let gateway = rtmsg.get_gateway();
+                    if rtmsg.hdr.rtm_flags & RTF_GATEWAY != 0 {
+                        Some(gateway)
+                    } else {
+                        None
+                    }
+                },
+                RTA_NETMASK => ret.cidr(
+                    rtmsg.get_netmask(if ret.destination.is_ipv4() {
+                        AF_INET as u8
+                    } else {
+                        AF_INET6 as u8
+                    })
+                ),
+                RTA_IFP => ret.ifindex = Some(rtmsg.get_index()),
+                _ => (),
+            }
         }
 
         Ok(ret)
+    }
+
+    fn monitor(&mut self, buf: &mut [u8]) -> io::Result<(crate::RouteChange, Route)> {
+        let mut ret = Route::default();
+        let n = self.read(buf)?;
+
+        let rtmsg: &mut m_rtmsg = unsafe { std::mem::transmute(buf.as_ptr()) };
+        if rtmsg.hdr.rtm_msglen > n as u16 {
+            return Err(io::Error::new(
+                io::ErrorKind::Other, 
+                format!("message length mismatch, in packet {}, returned {}", rtmsg.hdr.rtm_msglen, n)
+            ));
+        }
+        assert_eq!(rtmsg.hdr.rtm_version, RTM_VERSION as u8);
+
+        let rtm_type: RouteChange = rtmsg.hdr.rtm_type.into();
+
+        for offset in 0..RTAX_MAX {
+            if rtmsg.attr_len + std::mem::size_of::<rt_msghdr>() >= n {
+                break;
+            }
+            let bit = 1 << offset;
+            if rtmsg.hdr.rtm_addrs & bit == 0 {
+                continue;
+            }
+
+            match bit {
+                RTA_DST => {
+                    ret.destination = rtmsg.get_destination()
+                },
+                RTA_GATEWAY => ret.gateway = {
+                    let gateway = rtmsg.get_gateway();
+                    if rtmsg.hdr.rtm_flags & RTF_GATEWAY != 0 {
+                        Some(gateway)
+                    } else {
+                        None
+                    }
+                },
+                RTA_NETMASK => ret.cidr(
+                    rtmsg.get_netmask(if ret.destination.is_ipv4() {
+                        AF_INET as u8
+                    } else {
+                        AF_INET6 as u8
+                    })
+                ),
+                RTA_IFP => ret.ifindex = Some(rtmsg.get_index()),
+                _ => (),
+            }
+        }
+
+        rtmsg.attr_len = 0;
+        Ok((rtm_type, ret))
     }
 }
 
@@ -241,6 +290,10 @@ impl RouteSock {
         )?;
 
         Ok(Self(fd))
+    }
+
+    pub fn new_buf() -> [u8; std::mem::size_of::<m_rtmsg>()] {
+        m_rtmsg::new_buf()
     }
 }
 

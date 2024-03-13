@@ -1,8 +1,7 @@
 use std::net::IpAddr;
 
 use libc::{
-    in6_addr, in_addr, rt_msghdr, sockaddr_dl, sockaddr_in, 
-    sockaddr_in6, AF_INET, AF_INET6, AF_LINK, RTM_VERSION
+    in6_addr, in_addr, rt_msghdr, sockaddr, sockaddr_dl, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6, AF_LINK, RTM_VERSION
 };
 
 
@@ -11,7 +10,7 @@ use libc::{
 #[allow(non_camel_case_types)]
 pub(super) struct m_rtmsg {
     pub hdr: rt_msghdr,
-    pub attr: [i8; 512],
+    pub attr: [i8; 2048],
     pub attr_len: usize,
 }
 
@@ -33,6 +32,10 @@ macro_rules! roundup {
 }
 
 impl m_rtmsg {
+    pub fn new_buf() -> [u8; std::mem::size_of::<m_rtmsg>()] {
+        [0u8; std::mem::size_of::<m_rtmsg>()]
+    }
+
     pub fn len(&self) -> usize {
         std::mem::size_of::<rt_msghdr>() + self.attr_len
     }
@@ -50,7 +53,6 @@ impl m_rtmsg {
                     s_addr: unsafe { std::mem::transmute(addr.octets()) },
                 };
 
-                println!("{:x?}", &self.attr[self.attr_len..self.attr_len + sa_in.sin_len as usize]);
                 self.attr_len += sa_len;
             }
             IpAddr::V6(addr) => {
@@ -66,86 +68,74 @@ impl m_rtmsg {
                 };
                 sa_in6.sin6_scope_id = 0;
 
-                println!("{:x?}", &self.attr[self.attr_len..self.attr_len + sa_in6.sin6_len as usize]);
                 self.attr_len += sa_len;
             }
         }
     }
 
     pub fn put_destination(&mut self, dest: &IpAddr) {
-        println!("dst");
         self.put_addr(dest);
     }
 
     pub fn put_gateway(&mut self, gateway: &IpAddr) {
-        println!("put gateway");
         self.put_addr(&gateway)
     }
 
     pub fn put_index(&mut self, ifindex: u32) {
-        println!("put index");
         let sdl_len = std::mem::size_of::<sockaddr_dl>();
         let sa_dl = unsafe { &mut *(self.attr[self.attr_len..].as_mut_ptr() as *mut sockaddr_dl) };
         sa_dl.sdl_len = sdl_len as u8;
         sa_dl.sdl_family = AF_LINK as u8;
         sa_dl.sdl_index = ifindex as u16;
 
-        println!("{:x?}", &self.attr[self.attr_len..self.attr_len + sa_dl.sdl_len as usize]);
         self.attr_len += sdl_len;
     }
 
     pub fn put_netmask(&mut self, mask: &IpAddr) {
-        println!("put netmask");
         self.put_addr(&mask)
     }
 
     pub fn get_addr(&mut self) -> IpAddr {
-        let sa_in = unsafe {
-            &*(self.attr[self.attr_len..].as_ptr() as *const sockaddr_in)
+        let sa = unsafe {
+            &*(self.attr[self.attr_len..].as_ptr() as *const sockaddr)
         };
 
-        println!("{:x?}", &self.attr[self.attr_len..self.attr_len + sa_in.sin_len as usize]);
+        if sa.sa_family == AF_INET as u8 {
+            let sa_in: &sockaddr_in = unsafe { std::mem::transmute(sa) };
 
-        if sa_in.sin_family == AF_INET as u8 {
             self.attr_len += roundup!(sa_in.sin_len as usize);
+
             return IpAddr::from(sa_in.sin_addr.s_addr.to_ne_bytes());
         } else {
-            let sa_in6 = unsafe {
-                &*(self.attr[self.attr_len..].as_ptr() as *const sockaddr_in6)
-            };
+            let sa_in6: &sockaddr_in6 = unsafe { std::mem::transmute(sa) };
+
             self.attr_len += roundup!(sa_in6.sin6_len as usize);
+
             return IpAddr::from(sa_in6.sin6_addr.s6_addr);
         }
     }
 
     pub fn get_destination(&mut self) -> IpAddr {
-        println!("dst: ");
         self.get_addr()
     }
 
     pub fn get_gateway(&mut self) -> IpAddr {
-        println!("gate: ");
         self.get_addr()
     }
 
     pub fn get_netmask(&mut self, family: u8) -> IpAddr {
-        println!("mask: ");
-        let sa_in = unsafe {
-            &mut *(self.attr[self.attr_len..].as_ptr() as *mut sockaddr_in)
+        let sa= unsafe {
+            &mut *(self.attr[self.attr_len..].as_ptr() as *mut sockaddr)
         };
-        println!("mask len: {}", sa_in.sin_len);
-        sa_in.sin_family = family;
+        sa.sa_family = family;
 
         self.get_addr()
     }
 
     pub fn get_index(&mut self) -> u32 {
-        println!("ifp: ");
         let sa_dl = unsafe {
             &mut *(self.attr[self.attr_len..].as_ptr() as *mut sockaddr_dl)
         };
-        println!("sal_len: {}", sa_dl.sdl_len);
-        println!("{:x?}", &self.attr[self.attr_len..self.attr_len + 20 as usize]);
         self.attr_len += roundup!(sa_dl.sdl_len as usize);
 
         sa_dl.sdl_index as u32
