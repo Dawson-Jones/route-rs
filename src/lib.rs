@@ -9,11 +9,23 @@ pub use macos::{
 };
 
 
+#[derive(Debug)]
 pub struct Route {
     pub destination: IpAddr,
     pub prefix: u8,
     pub gateway: Option<IpAddr>,
     pub ifindex: Option<u32>,
+}
+
+impl Default for Route {
+    fn default() -> Self {
+        Route {
+            destination: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+            prefix: 0,
+            gateway: None,
+            ifindex: None,
+        }
+    }
 }
 
 impl Route {
@@ -26,6 +38,13 @@ impl Route {
         }
     }
 
+    pub fn default() -> Route {
+        Route::new(
+            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 
+            0
+        )
+    }
+
     pub(crate) fn mask(&self) -> IpAddr {
         match self.destination {
             IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::from(
@@ -34,6 +53,13 @@ impl Route {
             IpAddr::V6(_) => IpAddr::V6(Ipv6Addr::from(
                 u128::MAX.checked_shl(128 - self.prefix as u32).unwrap_or(0),
             )),
+        }
+    }
+
+    pub (crate) fn cidr(&mut self, netmask: IpAddr) {
+        self.prefix = match netmask {
+            IpAddr::V4(netmask) => <Ipv4Addr as Into<u32>>::into(netmask).leading_ones() as u8,
+            IpAddr::V6(netmask) => <Ipv6Addr as Into<u128>>::into(netmask).leading_ones() as u8,
         }
     }
 
@@ -68,7 +94,7 @@ impl Route {
 
 
 pub trait RouteAction {
-    fn add(&mut self, route: Route) -> io::Result<()>;
-    // fn delete(&mut self, route: Route) -> io::Result<()>;
-    // fn show() -> io::Result<Vec<Route>>;
+    fn add(&mut self, route: &Route) -> io::Result<()>;
+    fn delete(&mut self, route: &Route) -> io::Result<()>;
+    fn get(&mut self, route: &Route) -> io::Result<Route>;
 }
