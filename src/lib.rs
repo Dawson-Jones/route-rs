@@ -1,12 +1,31 @@
 use std::{
+    ffi::CString,
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
-mod macos;
-
 #[cfg(all(target_os = "macos"))]
-pub use macos::{if_nametoindex, RouteSock};
+mod macos;
+#[cfg(all(target_os = "linux"))]
+mod linux;
+
+#[cfg(all(target_os = "linux"))]
+pub use linux::RouteSock;
+#[cfg(all(target_os = "macos"))]
+pub use macos::RouteSock;
+
+#[macro_export]
+macro_rules! syscall {
+    ($fn: ident ( $($arg: expr),* ) ) => {{
+        #[allow(unused_unsafe)]
+        let res = unsafe { libc::$fn($( $arg), *) };
+        if res < 0 {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(res)
+        }
+    }};
+}
 
 #[derive(Debug)]
 pub struct Route {
@@ -112,4 +131,11 @@ pub trait RouteAction {
     fn delete(&mut self, route: &Route) -> io::Result<()>;
     fn get(&mut self, route: &Route) -> io::Result<Route>;
     fn monitor(&mut self, buf: &mut [u8]) -> io::Result<(RouteChange, Route)>;
+}
+
+pub fn if_nametoindex(name: &str) -> Option<u32> {
+    let name = CString::new(name).ok()?;
+    let ifindex = unsafe { libc::if_nametoindex(name.as_ptr()) };
+
+    Some(ifindex)
 }

@@ -1,26 +1,17 @@
 mod rtmsg;
 
 use std::{
-    ffi::CString, io::{self, Read, Write}, os::fd::{AsRawFd, RawFd}
+    io::{self, Read, Write}, 
+    os::fd::{AsRawFd, RawFd}
 };
 
-use crate::{macos::rtmsg::m_rtmsg, Route, RouteAction, RouteChange};
+use crate::{macos::rtmsg::m_rtmsg, syscall, Route, RouteAction, RouteChange};
 use libc::{
-    close, rt_msghdr, AF_INET, AF_INET6, AF_ROUTE, AF_UNSPEC, RTAX_MAX, RTA_DST, RTA_GATEWAY, RTA_IFP, RTA_NETMASK, RTF_GATEWAY, RTF_STATIC, RTF_UP, RTM_ADD, RTM_DELETE, RTM_GET, RTM_VERSION, SOCK_RAW
+    rt_msghdr, AF_INET, AF_INET6, AF_ROUTE, AF_UNSPEC, RTAX_MAX, RTA_DST, 
+    RTA_GATEWAY, RTA_IFP, RTA_NETMASK, RTF_GATEWAY, RTF_STATIC, 
+    RTF_UP, RTM_ADD, RTM_DELETE, RTM_GET, RTM_VERSION, SOCK_RAW
 };
 
-#[macro_export]
-macro_rules! syscall {
-    ($fn: ident ( $($arg: expr),* ) ) => {{
-        #[allow(unused_unsafe)]
-        let res = unsafe { libc::$fn($( $arg), *) };
-        if res < 0 {
-            Err(std::io::Error::last_os_error())
-        } else {
-            Ok(res)
-        }
-    }};
-}
 
 pub struct RouteSock(RawFd);
 
@@ -312,11 +303,4 @@ fn code2error(err: i32) -> io::Error {
     };
 
     io::Error::new(kind, format!("rtm_errno {}", err))
-}
-
-pub fn if_nametoindex(name: &str) -> Option<u32> {
-    let name = CString::new(name).ok()?;
-    let ifindex = unsafe { libc::if_nametoindex(name.as_ptr()) };
-
-    Some(ifindex)
 }
