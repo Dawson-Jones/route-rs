@@ -6,7 +6,7 @@ use std::{
 mod macos;
 
 #[cfg(all(target_os = "macos"))]
-pub use macos::{if_nametoindex, RouteSock, };
+pub use macos::{if_nametoindex, RouteSock};
 
 #[derive(Debug)]
 pub struct Route {

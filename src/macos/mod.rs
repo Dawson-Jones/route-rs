@@ -6,7 +6,7 @@ use std::{
 
 use crate::{macos::rtmsg::m_rtmsg, Route, RouteAction, RouteChange};
 use libc::{
-    rt_msghdr, AF_INET, AF_INET6, AF_ROUTE, AF_UNSPEC, RTAX_MAX, RTA_DST, RTA_GATEWAY, RTA_IFP, RTA_NETMASK, RTF_GATEWAY, RTF_STATIC, RTF_UP, RTM_ADD, RTM_DELETE, RTM_GET, RTM_VERSION, SOCK_RAW
+    close, rt_msghdr, AF_INET, AF_INET6, AF_ROUTE, AF_UNSPEC, RTAX_MAX, RTA_DST, RTA_GATEWAY, RTA_IFP, RTA_NETMASK, RTF_GATEWAY, RTF_STATIC, RTF_UP, RTM_ADD, RTM_DELETE, RTM_GET, RTM_VERSION, SOCK_RAW
 };
 
 #[macro_export]
@@ -294,6 +294,12 @@ impl RouteSock {
 
     pub fn new_buf() -> [u8; std::mem::size_of::<m_rtmsg>()] {
         m_rtmsg::new_buf()
+    }
+}
+
+impl Drop for RouteSock {
+    fn drop(&mut self) {
+        syscall!(close(self.as_raw_fd())).unwrap();
     }
 }
 
