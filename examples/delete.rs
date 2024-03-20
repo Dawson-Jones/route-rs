@@ -1,17 +1,10 @@
-
-
-
-use route_rs::{if_nametoindex, Route, RouteAction, RouteSock};
-
+use routex::{if_nametoindex, Route, RouteAction, RouteSock};
 
 fn main() {
     let mut handle = RouteSock::new().unwrap();
-    let ifindex = if_nametoindex("en0").unwrap();
+    let ifindex = if_nametoindex("enp0s5").unwrap();
 
-    let route = Route::new(
-        "1.1.1.1".parse().unwrap(), 
-        "32".parse().unwrap()
-    ).ifindex(ifindex);
+    let route = Route::new("1.1.1.1".parse().unwrap(), "32".parse().unwrap()).ifindex(ifindex);
     handle.add(&route).unwrap();
     println!("1.1.1.1/32 add to en0");
 
