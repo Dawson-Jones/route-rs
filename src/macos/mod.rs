@@ -177,13 +177,13 @@ impl RouteAction for RouteSock {
         if rtmsg.hdr.rtm_errno != 0 {
             return Err(code2error(rtmsg.hdr.rtm_errno));
         }
-
         if rtmsg.hdr.rtm_msglen > n as u16 {
             return Err(io::Error::new(
                 io::ErrorKind::Other, 
                 format!("message length mismatch, in packet {}, returned {}", rtmsg.hdr.rtm_msglen, n)
             ));
         }
+        rtmsg.attr_len = 0;
 
         for offset in 0..RTAX_MAX {
             if rtmsg.attr_len + std::mem::size_of::<rt_msghdr>() >= n {
@@ -233,6 +233,7 @@ impl RouteAction for RouteSock {
             ));
         }
         assert_eq!(rtmsg.hdr.rtm_version, RTM_VERSION as u8);
+        rtmsg.attr_len = 0;
 
         let rtm_type: RouteChange = rtmsg.hdr.rtm_type.into();
 
