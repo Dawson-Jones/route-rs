@@ -12,7 +12,9 @@ description = "cross platform route implement"
 
 [dependencies]
 libc = "0.2"
+ipnetwork = "0.20"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-netlink-packet-route = { version = "0.19" }
+netlink-packet-route = "*"
 netlink-sys = "*"
+netlink-packet-core = "*"
