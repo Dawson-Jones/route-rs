@@ -1,7 +1,7 @@
 use std::{
     ffi::CString,
     io,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    net::IpAddr,
 };
 
 #[cfg(all(target_os = "macos"))]
@@ -37,6 +37,8 @@ pub struct Route {
 
 impl Default for Route {
     fn default() -> Self {
+        use std::net::Ipv4Addr;
+
         Route {
             destination: IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
             prefix: 0,
@@ -56,11 +58,10 @@ impl Route {
         }
     }
 
-    pub fn default() -> Route {
-        Route::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0)
-    }
-
+    #[cfg(target_os = "macos")]
     pub(crate) fn mask(&self) -> IpAddr {
+        use std::net::{Ipv4Addr, Ipv6Addr};
+
         match self.destination {
             IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::from(
                 u32::MAX.checked_shl(32 - self.prefix as u32).unwrap_or(0),
@@ -71,17 +72,14 @@ impl Route {
         }
     }
 
+    #[cfg(target_os = "macos")]
     pub(crate) fn cidr(&mut self, netmask: IpAddr) {
+        use std::net::{Ipv4Addr, Ipv6Addr};
+
         self.prefix = match netmask {
             IpAddr::V4(netmask) => <Ipv4Addr as Into<u32>>::into(netmask).leading_ones() as u8,
             IpAddr::V6(netmask) => <Ipv6Addr as Into<u128>>::into(netmask).leading_ones() as u8,
         }
-    }
-
-    #[cfg(target_os = "linux")]
-    pub fn via(mut self, gateway: IpAddr) -> Route {
-        self.gateway = Some(gateway);
-        self
     }
 
     pub fn gateway(mut self, gateway: IpAddr) -> Route {
@@ -94,14 +92,7 @@ impl Route {
         self
     }
 
-    #[cfg(target_os = "macos")]
     pub fn interface(mut self, interface: &str) -> Route {
-        self.ifindex = if_nametoindex(interface);
-        self
-    }
-
-    #[cfg(target_os = "linux")]
-    pub fn dev(mut self, interface: &str) -> Route {
         self.ifindex = if_nametoindex(interface);
         self
     }
